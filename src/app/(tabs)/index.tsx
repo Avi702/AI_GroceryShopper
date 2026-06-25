@@ -1,42 +1,51 @@
 import { Image, Pressable, Text, View, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {router} from "expo-router"
-interface groceryItems{
-  time: string,
-  date: string,
-  image: string,
-  description: string,
-  items: number
+import ReportCard from "../components/ReportCard";
+import {useState} from "react"
+const fakeData = {
+  time: "10:30AM",
+  date: "10/17/2025",
+  image:"https://images.unsplash.com/photo-1550583724-b2692b85b150",
+  description: "2% milk",
+  items: 3
 }
-export default function Index({time,date,image,description,items}:groceryItems) {
+
+export default function Index() {
+  const [loading, isLoading] = useState(false)
+  const [result, setResult] = useState(null)
+  const SERVER = process.env.EXPO_PUBLIC_SERVER_URL;
+  const handleScan = async() => {
+      isLoading(true)
+      try{
+          await fetch(`${SERVER}/request-scan`, { method: "POST" });
+      }catch(e){
+          console.error("Scan request failed:", e);
+      } finally {
+          isLoading(false);
+      }
+  }
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.header1}>Hello Avneet!</Text>
       <Text style={styles.header}>View your recent reports</Text>
       <View style ={styles.report}>
-        <Text style={styles.header}>Add to your grocery list</Text>
-        <View style ={styles.card}>
-          <Image source = {{uri: image}} style = {styles.imageEl}></Image>
-          <View style={styles.rightSide}>
-            <View style={styles.metaRow}>
-              <Text style = {styles.meta}>{date}</Text>
-              <Text style = {styles.meta}>{time}</Text>
-              <Text style = {styles.meta}>{items}</Text>
-            </View>
-            <Text style={styles.descText}>{description}</Text>
-          </View>
-        </View>
+        <Text style={styles.header}>Current Inventory</Text>
+        <ReportCard {...fakeData}/>
       </View>
       <View style ={styles.buttons}>
       <Pressable style = {styles.button} onPress={()=>console.log("tapped")}>
           <Text style={styles.button}>New Scan</Text>
-        </Pressable>
+      </Pressable>
+          <Pressable style = {styles.button} onPress={()=>router.push("/Shop")}>
+          <Text style={styles.button}>Phone Scan</Text>
+      </Pressable>
       <Pressable style = {styles.button} onPress={()=>router.push("/Shop")}>
           <Text style={styles.button}>Purchase Items</Text>
       </Pressable>
       </View>
     </SafeAreaView>
-  );
+  )
 }
 
 const styles = StyleSheet.create({

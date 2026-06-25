@@ -5,7 +5,6 @@ import json
 import requests
 import os
 load_dotenv()
-path = "assets/images/fridge.png"
 location = "Hockessin, Delaware, 19707"
 ANALYZE_SCHEMA = {
     "type": "object",
@@ -82,7 +81,7 @@ def image_analyze(model,image_data, feedback = None):
                 "type":"image",
                 "source":{
                     "type":"base64",
-                    "media_type":"image/png",
+                    "media_type":"image/jpeg",
                     "data":image_data,
                 },
             },{"type":"text","text":"""From this image, list every grocery 
@@ -111,7 +110,7 @@ def reflect(model, image_analyze_res, image_data):
     message = model.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1000,
-        system="""You are a quality reviewer for fridge detection. You see the same
+        system="""You are a quality reviewer for grocery detection. You see the same
 images the image agent saw, plus its analysis. Verify the analysis against the
 actual images. Catch missed items, hallucinated items, and occluded items the
 first pass may have gotten wrong.
@@ -128,7 +127,7 @@ suggestion: what to re-examine if not accepted""",
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": "image/png",
+                            "media_type": "image/jpeg",
                             "data": image_data,
                         },
                     },
@@ -195,26 +194,28 @@ guess, or correct a URL yourself.""",
     )
     return parse_json_message(format_msg)
 
+def agents_pipeline(image_data):
+    """Run analyze -> reflect (x3) -> shop.
 
-
-if __name__== "__main__":
+    `image_data` is a base64-encoded image string (what image_analyze/reflect
+    expect in the message "data" field). For local file testing, encode first
+    with get_image(path).
+    """
     image_agent = anthropic.Anthropic()
     reflective_agent = anthropic.Anthropic()
     shop_agent = anthropic.Anthropic()
-    reason_agent = anthropic.Anthropic()
     output = None
-    img = get_image(path)
     feedback = None
     for i in range(3):
-        output = image_analyze(image_agent,img,feedback)
-        print(output)
-        reflect_out = reflect(reflective_agent,output,img)
-        print(reflect_out)
+        output = image_analyze(image_agent,image_data,feedback)
+        reflect_out = reflect(reflective_agent,output,image_data)
         if reflect_out["accept"]:
             break
         feedback = reflect_out["suggestion"]
-        print(feedback)
+    print(output)
     shopping_list = output["shopping_list"]
     final = shop(shop_agent,shopping_list)
-    print(final)
+    return {"inventory": output, "shopping": final}
+
+
     

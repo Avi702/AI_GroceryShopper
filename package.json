@@ -9,6 +9,7 @@
     "@fortawesome/free-solid-svg-icons": "^7.2.0",
     "@fortawesome/react-native-fontawesome": "^1.0.0",
     "expo": "~56.0.9",
+    "expo-asset": "~56.0.17",
     "expo-constants": "~56.0.17",
     "expo-device": "~56.0.4",
     "expo-font": "~56.0.5",
