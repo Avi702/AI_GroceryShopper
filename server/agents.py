@@ -4,6 +4,8 @@ import base64
 import json
 import requests
 import os
+from urllib.parse import quote
+from datetime import datetime
 load_dotenv()
 location = "Hockessin, Delaware, 19707"
 ANALYZE_SCHEMA = {
@@ -11,9 +13,10 @@ ANALYZE_SCHEMA = {
     "properties": {
         "shopping_list": {"type": "array", "items": {"type": "string"}},
         "percent": {"type": "array", "items": {"type": "number"}},
+        "amount": {"type": "array", "items": {"type": "integer"}},
         "reasoning": {"type": "string"},
     },
-    "required": ["shopping_list", "percent", "reasoning"],
+    "required": ["shopping_list", "percent", "amount", "reasoning"],
     "additionalProperties": False,
 }
 
@@ -75,7 +78,44 @@ def parse_json_message(message):
 def get_image(path):
     with open(path,"rb") as f:
         return base64.standard_b64encode(f.read()).decode("utf-8")
-    
+
+def get_product_image(name):
+    """Resolve a product photo URL for a grocery item, looked up by name.
+
+    The scan photo is a single image of the whole fridge, so we can't pull a
+    clean per-item picture from it. Instead we look the item up by name in
+    Open Food Facts (a free, no-API-key, grocery-specific product database)
+    and return its front-of-package photo. If there's no match or the request
+    fails, we fall back to a labeled placeholder image, so every item always
+    ends up with *some* image URL.
+    """
+    # When OFF has no match we show a clean labeled placeholder (gray box with the
+    # item name) rather than a random keyword photo, which could be anything.
+    fallback = f"https://placehold.co/200x200?text={quote(name)}"
+    try:
+        res = requests.get(
+            "https://world.openfoodfacts.org/cgi/search.pl",
+            params={
+                "search_terms": name,
+                "search_simple": 1,
+                "action": "process",
+                "json": 1,
+                "page_size": 5,
+                "sort_by": "unique_scans_n",
+                "fields": "image_front_url",   # only ask for the photo URL field
+            },
+            headers={"User-Agent": "AI_GroceryShopper/1.0 (avneet.sehgal72@gmail.com)"},
+            timeout=5,   
+        )
+        res.raise_for_status()
+        products = res.json().get("products", [])
+        for product in products:
+            if product.get("image_front_url"):
+                return product["image_front_url"]
+    except requests.RequestException:
+        pass
+    return fallback
+
 def image_analyze(model,image_data, feedback = None):
     content = [{
                 "type":"image",
@@ -84,9 +124,12 @@ def image_analyze(model,image_data, feedback = None):
                     "media_type":"image/jpeg",
                     "data":image_data,
                 },
-            },{"type":"text","text":"""From this image, list every grocery 
-               item you see here, list 100 percent confident first then items 
-               that may be hard to see due to occlusion, angle, or obscure."""},
+            },{"type":"text","text":"""From this image, list every EDIBLE food or
+               drink grocery item you see — most confident first, then items that
+               are harder to see due to occlusion, angle, or blur. Only include
+               things a person eats or drinks. Do NOT include non-food items such
+               as cleaning supplies, sprays, soap, paper towels, napkins, utensils,
+               containers, foil, bags, or toiletries — ignore them entirely."""},
             ]
     if feedback:
         content.append({"type": "text",
@@ -96,9 +139,12 @@ def image_analyze(model,image_data, feedback = None):
     message = model.messages.create(
         model= "claude-haiku-4-5-20251001",
         max_tokens=1000,
-        system="""You are a qualified deep professional image analyzer. Identify all grocery items.
-        shopping_list: all items
+        system="""You are a qualified deep professional image analyzer. Identify ONLY
+        edible food and drink grocery items. Never include non-food items such as
+        cleaning products, sprays, paper goods, utensils, containers, or toiletries.
+        shopping_list: all edible food/drink items
         percent: corresponding confidence level (0-1) for each item
+        amount: how many units of each item are visible (integer count), index-aligned with shopping_list
         reasoning: reasoning for each item""",
         output_config={"format": {"type": "json_schema", "schema": ANALYZE_SCHEMA}},
         messages=[
@@ -113,10 +159,12 @@ def reflect(model, image_analyze_res, image_data):
         system="""You are a quality reviewer for grocery detection. You see the same
 images the image agent saw, plus its analysis. Verify the analysis against the
 actual images. Catch missed items, hallucinated items, and occluded items the
-first pass may have gotten wrong.
+first pass may have gotten wrong. Also reject any NON-FOOD items (cleaning
+supplies, sprays, paper goods, utensils, containers, toiletries) — the list must
+contain only edible food and drink. Do not accept if any non-food item is present.
 accept: true or false
 reason: brief explanation
-corrections: any items the image agent got wrong
+corrections: any items the image agent got wrong (including non-food to remove)
 suggestion: what to re-examine if not accepted""",
         output_config={"format": {"type": "json_schema", "schema": REFLECT_SCHEMA}},
         messages=[
@@ -213,9 +261,47 @@ def agents_pipeline(image_data):
             break
         feedback = reflect_out["suggestion"]
     print(output)
-    shopping_list = output["shopping_list"]
-    final = shop(shop_agent,shopping_list)
-    return {"inventory": output, "shopping": final}
+
+    # Dedupe items in code (with a set) rather than trusting the model to avoid
+    # repeats. Keep the first occurrence of each name plus its percent/amount,
+    # comparing case-insensitively so "Milk" and "milk" don't both appear.
+    seen = set()
+    unique_items = []   # list of (name, confidence, amount)
+    for name, confidence, amount in zip(
+        output["shopping_list"], output["percent"], output["amount"]
+    ):
+        key = name.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_items.append((name, confidence, amount))
+
+    # Shop only the unique item names, so we never research the same item twice.
+    final = shop(shop_agent, [name for name, _, _ in unique_items])
+
+    now = datetime.now()
+    date_str = now.strftime("%m/%d/%Y")
+    time_str = now.strftime("%I:%M %p")
+
+    inventory_items = [
+        {
+            "name": name,
+            "amount": amount,
+            "confidence": confidence,
+            "image_url": get_product_image(name),
+            "date": date_str,
+            "time": time_str,
+        }
+        for name, confidence, amount in unique_items
+    ]
+
+    return {
+        "inventory": {
+            "items": inventory_items,
+            "reasoning": output["reasoning"],
+        },
+        "shopping": final,
+    }
 
 
     

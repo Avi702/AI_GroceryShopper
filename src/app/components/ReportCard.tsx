@@ -1,28 +1,30 @@
-import { Image, Pressable, Text, View, StyleSheet } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import {router} from "expo-router"
-interface groceryItems{
-  time: string,
+import { Image, Text, View, StyleSheet } from "react-native";
+
+interface InventoryItem{
+  name: string,
+  image_url: string,
+  confidence: number,
+  amount: number,
   date: string,
-  image: string,
-  description: string,
-  items: number
+  time: string,
 }
 
-export default function ReportCard({time,date,image,description,items}:groceryItems){
-    return(<>
+export default function ReportCard({name, image_url, confidence, amount, date, time}:InventoryItem){
+    return(
     <View style ={styles.card}>
-          <Image source={{ uri: image }} style = {styles.imageEl}></Image>
+          <Image source={{ uri: image_url }} style = {styles.imageEl}></Image>
           <View style={styles.rightSide}>
             <View style={styles.metaRow}>
               <Text style = {styles.meta}>{date}</Text>
               <Text style = {styles.meta}>{time}</Text>
-              <Text style = {styles.meta}>Amount: {items}</Text>
+              <Text style = {styles.meta}>Amount: {amount}</Text>
             </View>
-            <Text style={styles.descText}>{description}</Text>
+            <Text style={styles.descText}>{name}</Text>
+            {/* confidence comes back as 0-1; show it as a percentage */}
+            <Text style={styles.meta}>{Math.round(confidence * 100)}% sure</Text>
           </View>
         </View>
-    </>)
+    )
 }
 
 const styles = StyleSheet.create({
