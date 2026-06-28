@@ -71,8 +71,6 @@ export default function Index() {
           const data = await res.json(); 
           if (data.items?.length) {
               setResult({ inventory: { items: data.items, reasoning: "" }, shopping: null });
-              // If this differs from what was showing when New Scan was pressed,
-              // the new scan has landed — stop the loading spinner.
               if (JSON.stringify(data.items) !== prevSigRef.current) {
                   setScanning(false)
               }
@@ -113,9 +111,6 @@ export default function Index() {
       </Pressable>
           <Pressable style = {styles.button} onPress={handlePhoneScan} disabled={loading}>
           <Text style={styles.button}>{loading ? "Scanning..." : "Phone Scan"}</Text>
-      </Pressable>
-      <Pressable style = {styles.button} onPress={()=>router.push("/Shop")}>
-          <Text style={styles.button}>Purchase Items</Text>
       </Pressable>
       </View>
     </SafeAreaView>

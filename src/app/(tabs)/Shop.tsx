@@ -1,5 +1,5 @@
 import React from 'react'
-import { Image, Pressable, Text, View, StyleSheet, ScrollView} from "react-native";
+import { ActivityIndicator, Alert, Image, Pressable, Text, View, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {router} from "expo-router"
 export default function Shop(){

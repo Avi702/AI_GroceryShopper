@@ -6,6 +6,7 @@ import requests
 import os
 from urllib.parse import quote
 from datetime import datetime
+from db import get_inventory_history, save_inventory, save_shopping
 load_dotenv()
 location = "Hockessin, Delaware, 19707"
 ANALYZE_SCHEMA = {
@@ -53,6 +54,17 @@ SHOP_SCHEMA = {
         "total_price": {"type": "number"},
     },
     "required": ["items", "total_price"],
+    "additionalProperties": False,
+}
+
+REASON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "shopping_list": {"type": "array", "items": {"type": "string"}},
+        "amount": {"type": "array", "items": {"type": "integer"}},
+        "reasoning": {"type": "string"},          
+    },
+    "required": ["shopping_list", "amount", "reasoning"],   
     "additionalProperties": False,
 }
 
@@ -186,8 +198,21 @@ suggestion: what to re-examine if not accepted""",
     )
     return parse_json_message(message)
 
-def reason(model,shop_list):
-    pass
+def reason(model,history):
+    message = model.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=1000,
+        system="""You decide what groceries to restock from inventory history. Track how
+each item's amount trends over time: items that are low or gone but usually present
+should be bought. Only suggest edible food/drink.
+shopping_list: item names to buy
+amount: how many of each to buy, index-aligned with shopping_list
+reasoning: brief explanation""",
+        output_config={"format": {"type": "json_schema", "schema": REASON_SCHEMA}},
+        messages = [{"role": "user",
+        "content": f"Inventory history:\n{json.dumps(history)}\n\nWhat should we buy?"}]
+    )
+    return parse_json_message(message)
 
 def shop(model, shop_list):
     findings = {}
@@ -251,6 +276,7 @@ def agents_pipeline(image_data):
     """
     image_agent = anthropic.Anthropic()
     reflective_agent = anthropic.Anthropic()
+    reasoning_agent = anthropic.Anthropic()
     shop_agent = anthropic.Anthropic()
     output = None
     feedback = None
@@ -261,10 +287,8 @@ def agents_pipeline(image_data):
             break
         feedback = reflect_out["suggestion"]
     print(output)
-
-    # Dedupe items in code (with a set) rather than trusting the model to avoid
-    # repeats. Keep the first occurrence of each name plus its percent/amount,
-    # comparing case-insensitively so "Milk" and "milk" don't both appear.
+    
+    # Filter out for unique items
     seen = set()
     unique_items = []   # list of (name, confidence, amount)
     for name, confidence, amount in zip(
@@ -275,10 +299,6 @@ def agents_pipeline(image_data):
             continue
         seen.add(key)
         unique_items.append((name, confidence, amount))
-
-    # Shop only the unique item names, so we never research the same item twice.
-    final = shop(shop_agent, [name for name, _, _ in unique_items])
-
     now = datetime.now()
     date_str = now.strftime("%m/%d/%Y")
     time_str = now.strftime("%I:%M %p")
@@ -294,6 +314,25 @@ def agents_pipeline(image_data):
         }
         for name, confidence, amount in unique_items
     ]
+
+    # Save the current scan first so the reasoning history includes it.
+    save_inventory(inventory_items)
+
+    optimized = reason(reasoning_agent, get_inventory_history())
+    final = shop(shop_agent, optimized["shopping_list"])
+
+    # Merge each item's buy amount (from reason) onto the shop results, then persist.
+    amount_by_name = dict(zip(optimized["shopping_list"], optimized["amount"]))
+    save_shopping([
+        {
+            "name": it["name"],
+            "amount": amount_by_name.get(it["name"]),
+            "store": it["store"],
+            "link": it["link"],
+            "price": it["price"],
+        }
+        for it in final["items"]
+    ])
 
     return {
         "inventory": {

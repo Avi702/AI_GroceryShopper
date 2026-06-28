@@ -38,6 +38,29 @@ def init_db():
                 );
                 """
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS shopping_list (
+                  id SERIAL PRIMARY KEY,
+                  name TEXT NOT NULL,
+                  amount INTEGER,
+                  store TEXT NOT NULL,
+                  link TEXT NOT NULL,
+                  price NUMERIC NOT NULL,
+                  generated_at TIMESTAMPTZ NOT NULL
+                );
+                """
+            )
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scans (
+                id          SERIAL PRIMARY KEY,
+                photo_key   TEXT NOT NULL,
+                scanned_at  TIMESTAMPTZ NOT NULL
+                );
+                """
+            )
         conn.commit()  # DDL (CREATE TABLE) only persists after a commit
     finally:
         conn.close()   # always hand the connection back, even if something failed
@@ -54,9 +77,6 @@ def save_inventory(items):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            # executemany runs the same INSERT once per item. The %(key)s placeholders
-            # are filled from each dict, and psycopg2 safely escapes the values —
-            # which is what prevents SQL injection. Never build SQL with f-strings/+.
             cur.executemany(
                 """
                 INSERT INTO inventory_items (name, amount, confidence, image_url, scanned_at)
@@ -73,7 +93,54 @@ def save_inventory(items):
                     for it in items
                 ],
             )
-        conn.commit()  # nothing is actually written to the DB until we commit
+        conn.commit()
+    finally:
+        conn.close()
+    delete_old_inventory()
+    delete_old_shopping()
+    return scanned_at
+
+
+def save_shopping(items):
+    """Insert the shop results as one shopping list under a single generated_at."""
+    generated_at = datetime.now(timezone.utc)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO shopping_list (name, amount, store, link, price, generated_at)
+                VALUES (%(name)s, %(amount)s, %(store)s, %(link)s, %(price)s, %(generated_at)s)
+                """,
+                [
+                    {
+                        "name": it["name"],
+                        "amount": it.get("amount"),
+                        "store": it["store"],
+                        "link": it["link"],
+                        "price": it["price"],
+                        "generated_at": generated_at,
+                    }
+                    for it in items
+                ],
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return generated_at
+
+
+def save_scan(photo_key):
+    """Record a captured photo's S3 key so /scans can list it later."""
+    scanned_at = datetime.now(timezone.utc)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO scans (photo_key, scanned_at) VALUES (%s, %s)",
+                (photo_key, scanned_at),
+            )
+        conn.commit()
     finally:
         conn.close()
     return scanned_at
@@ -103,6 +170,7 @@ def get_latest_inventory():
     finally:
         conn.close()
 
+
     # Turn the stored timestamp back into the date/time strings the card displays.
     items = []
     for r in rows:
@@ -117,6 +185,116 @@ def get_latest_inventory():
         })
     return items
 
+def get_inventory_history():
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT name, amount, scanned_at FROM inventory_items ORDER BY scanned_at
+                """
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return [
+        {"name": r["name"], "amount": r["amount"], "scanned_at": r["scanned_at"].isoformat()}
+        for r in rows
+    ]
+
+def get_latest_shopping():
+    """Return the items from the most recent shopping list (largest generated_at).
+
+    Same "latest batch" trick as get_latest_inventory, but against the
+    shopping_list table and returning the shop fields (store / link / price).
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT name, amount, store, link, price, generated_at
+                FROM shopping_list
+                WHERE generated_at = (SELECT MAX(generated_at) FROM shopping_list)
+                ORDER BY id
+                """
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    items = []
+    for r in rows:
+        ts = r["generated_at"]
+        items.append({
+            "name": r["name"],
+            "amount": r["amount"],
+            "store": r["store"],
+            "link": r["link"],
+            # NUMERIC comes back as a Decimal — cast to float so it serializes
+            # to a plain JSON number.
+            "price": float(r["price"]),
+            "date": ts.strftime("%m/%d/%Y"),
+            "time": ts.strftime("%I:%M %p"),
+        })
+    return items
+
+
+
+
+def delete_old_inventory(days=3):
+    """Delete inventory_items older than `days` days, keeping only the recent window.
+
+    `scanned_at < now() - (days * interval '1 day')` removes anything past the
+    cutoff. `days` is parameterized (%s), never string-formatted into the SQL.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM inventory_items WHERE scanned_at < now() - (%s * interval '1 day')",
+                (days,),
+            )
+        conn.commit()  # a DELETE only takes effect after commit
+    finally:
+        conn.close()
+
+
+def delete_old_shopping(days=3):
+    """Delete shopping_list rows older than `days` days, keeping only the recent window."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM shopping_list WHERE generated_at < now() - (%s * interval '1 day')",
+                (days,),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_scan_keys(limit=50):
+    """Return recent scan photo keys, newest first, for the Scans page.
+
+    Leaves scanned_at as a datetime (NOT stringified) because the /scans
+    endpoint calls .strftime() on it.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT photo_key, scanned_at
+                FROM scans
+                ORDER BY scanned_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return rows
 
 if __name__ == "__main__":
     conn = get_connection()
