@@ -47,10 +47,14 @@ def init_db():
                   store TEXT NOT NULL,
                   link TEXT NOT NULL,
                   price NUMERIC NOT NULL,
+                  image_url TEXT,
                   generated_at TIMESTAMPTZ NOT NULL
                 );
                 """
             )
+            # CREATE IF NOT EXISTS won't add a column to an existing table, so add
+            # image_url explicitly for DBs created before this column existed.
+            cur.execute("ALTER TABLE shopping_list ADD COLUMN IF NOT EXISTS image_url TEXT;")
 
             cur.execute(
                 """
@@ -109,8 +113,8 @@ def save_shopping(items):
         with conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO shopping_list (name, amount, store, link, price, generated_at)
-                VALUES (%(name)s, %(amount)s, %(store)s, %(link)s, %(price)s, %(generated_at)s)
+                INSERT INTO shopping_list (name, amount, store, link, price, image_url, generated_at)
+                VALUES (%(name)s, %(amount)s, %(store)s, %(link)s, %(price)s, %(image_url)s, %(generated_at)s)
                 """,
                 [
                     {
@@ -119,6 +123,7 @@ def save_shopping(items):
                         "store": it["store"],
                         "link": it["link"],
                         "price": it["price"],
+                        "image_url": it.get("image_url"),
                         "generated_at": generated_at,
                     }
                     for it in items
@@ -213,7 +218,7 @@ def get_latest_shopping():
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT name, amount, store, link, price, generated_at
+                SELECT name, amount, store, link, price, image_url, generated_at
                 FROM shopping_list
                 WHERE generated_at = (SELECT MAX(generated_at) FROM shopping_list)
                 ORDER BY id
@@ -234,6 +239,7 @@ def get_latest_shopping():
             # NUMERIC comes back as a Decimal — cast to float so it serializes
             # to a plain JSON number.
             "price": float(r["price"]),
+            "image_url": r["image_url"],
             "date": ts.strftime("%m/%d/%Y"),
             "time": ts.strftime("%I:%M %p"),
         })

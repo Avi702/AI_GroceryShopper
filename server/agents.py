@@ -138,10 +138,12 @@ def image_analyze(model,image_data, feedback = None):
                 },
             },{"type":"text","text":"""From this image, list every EDIBLE food or
                drink grocery item you see — most confident first, then items that
-               are harder to see due to occlusion, angle, or blur. Only include
-               things a person eats or drinks. Do NOT include non-food items such
-               as cleaning supplies, sprays, soap, paper towels, napkins, utensils,
-               containers, foil, bags, or toiletries — ignore them entirely."""},
+               are harder to see due to occlusion, angle, or blur. If you see
+               non-food items (cleaning supplies, candle oil, sprays, soap, paper
+               towels, utensils, containers, toiletries), simply leave them OUT of
+               the list. NEVER refuse the image or return an empty list just
+               because non-food items are present — only exclude them and list the
+               food."""},
             ]
     if feedback:
         content.append({"type": "text",
@@ -151,10 +153,12 @@ def image_analyze(model,image_data, feedback = None):
     message = model.messages.create(
         model= "claude-haiku-4-5-20251001",
         max_tokens=1000,
-        system="""You are a qualified deep professional image analyzer. Identify ONLY
-        edible food and drink grocery items. Never include non-food items such as
-        cleaning products, sprays, paper goods, utensils, containers, or toiletries.
-        shopping_list: all edible food/drink items
+        system="""You are a qualified deep professional image analyzer. List every
+        edible food and drink grocery item. Exclude non-food items (cleaning products,
+        candle oil, sprays, paper goods, utensils, containers, toiletries) by simply
+        omitting them — NEVER refuse or return an empty list just because non-food
+        items appear in the image.
+        shopping_list: all edible food/drink items (omit any non-food)
         percent: corresponding confidence level (0-1) for each item
         amount: how many units of each item are visible (integer count), index-aligned with shopping_list
         reasoning: reasoning for each item""",
@@ -171,9 +175,10 @@ def reflect(model, image_analyze_res, image_data):
         system="""You are a quality reviewer for grocery detection. You see the same
 images the image agent saw, plus its analysis. Verify the analysis against the
 actual images. Catch missed items, hallucinated items, and occluded items the
-first pass may have gotten wrong. Also reject any NON-FOOD items (cleaning
-supplies, sprays, paper goods, utensils, containers, toiletries) — the list must
-contain only edible food and drink. Do not accept if any non-food item is present.
+first pass may have gotten wrong. If the analysis includes NON-FOOD items (cleaning
+supplies, candle oil, sprays, paper goods, utensils, containers, toiletries), list
+them in corrections to remove — but the food items are still valid; do NOT reject
+the whole scan just because non-food items are present.
 accept: true or false
 reason: brief explanation
 corrections: any items the image agent got wrong (including non-food to remove)
@@ -330,6 +335,7 @@ def agents_pipeline(image_data):
             "store": it["store"],
             "link": it["link"],
             "price": it["price"],
+            "image_url": get_product_image(it["name"]),
         }
         for it in final["items"]
     ])

@@ -39,7 +39,7 @@ export default function Index() {
   }
 
   const handlePhoneScan = async() => {
-      const picked = await ImagePicker.launchImageLibraryAsync({ quality: 0.7 })
+      const picked = await ImagePicker.launchCameraAsync({ quality: 0.7 })
       if (picked.canceled) return
       const asset = picked.assets[0]
 

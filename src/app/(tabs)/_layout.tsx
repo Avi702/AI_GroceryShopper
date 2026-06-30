@@ -33,12 +33,12 @@ export default function _Layout(){
                     )}}
             />
             <Tabs.Screen 
-                name = "Profile"
+                name = "Scans"
                 options ={{
-                    title: "Profile",
+                    title: "Scans",
                     headerShown: false,
                     tabBarIcon: ({color,size})=>(
-                        <FontAwesome name ="user" size={size} color={color}/>
+                        <FontAwesome name ="image" size={size} color={color}/>
                     )}}
             />
         </Tabs>
