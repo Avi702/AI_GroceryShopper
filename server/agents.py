@@ -151,7 +151,7 @@ def image_analyze(model,image_data, feedback = None):
                     f"Re-examine the images carefully addressing this before responding."
         })
     message = model.messages.create(
-        model= "claude-haiku-4-5-20251001",
+        model= "claude-opus-4-8",
         max_tokens=1000,
         system="""You are a qualified deep professional image analyzer. List every
         edible food and drink grocery item. Exclude non-food items (cleaning products,
@@ -170,7 +170,7 @@ def image_analyze(model,image_data, feedback = None):
 
 def reflect(model, image_analyze_res, image_data):
     message = model.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model="claude-sonnet-5",
         max_tokens=1000,
         system="""You are a quality reviewer for grocery detection. You see the same
 images the image agent saw, plus its analysis. Verify the analysis against the
@@ -205,7 +205,7 @@ suggestion: what to re-examine if not accepted""",
 
 def reason(model,history):
     message = model.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model="claude-sonnet-5",
         max_tokens=1000,
         system="""You decide what groceries to restock from inventory history. Track how
 each item's amount trends over time: items that are low or gone but usually present
@@ -223,7 +223,7 @@ def shop(model, shop_list):
     findings = {}
     for item in shop_list:
         message = model.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-sonnet-5",
             max_tokens=1500,
             system="""You are a grocery shopping research agent. Always perform a web
 search to answer — never answer from memory. Find a store near the given location
