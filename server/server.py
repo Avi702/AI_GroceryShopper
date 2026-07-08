@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from agents import agents_pipeline
-from db import init_db, get_latest_inventory, get_latest_shopping, get_scan_keys, save_scan
+from db import init_db, get_latest_inventory, get_latest_shopping, get_scan_keys, save_scan, EASTERN
 import anthropic
 import base64
 import boto3, os
@@ -74,16 +74,16 @@ async def get_shopping():
 
 @app.get("/scans")
 def get_scans():
-    rows = get_scan_keys()   
+    rows = get_scan_keys()
     return {"scans": [
         {
             "url": s3.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": S3_BUCKET, "Key": r["photo_key"]},
-                ExpiresIn=3600,   
+                ExpiresIn=3600,
             ),
-            "date": r["scanned_at"].strftime("%m/%d/%Y"),
-            "time": r["scanned_at"].strftime("%I:%M %p"),
+            "date": r["scanned_at"].astimezone(EASTERN).strftime("%m/%d/%Y"),
+            "time": r["scanned_at"].astimezone(EASTERN).strftime("%I:%M %p"),
         }
         for r in rows
     ]}

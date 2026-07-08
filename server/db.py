@@ -1,9 +1,11 @@
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import os
 load_dotenv()
+EASTERN = ZoneInfo("America/New_York")
 HOST = os.getenv('DB_HOST')
 PORT = int(os.getenv('DB_PORT'))
 DB = os.getenv('DB_NAME')
@@ -77,7 +79,7 @@ def save_inventory(items):
     confidence / image_url). Giving the whole batch a single `scanned_at` is what
     lets us later pull back "the most recent scan" as a group. Returns that timestamp.
     """
-    scanned_at = datetime.now(timezone.utc)
+    scanned_at = datetime.now(EASTERN)
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -107,7 +109,7 @@ def save_inventory(items):
 
 def save_shopping(items):
     """Insert the shop results as one shopping list under a single generated_at."""
-    generated_at = datetime.now(timezone.utc)
+    generated_at = datetime.now(EASTERN)
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -137,7 +139,7 @@ def save_shopping(items):
 
 def save_scan(photo_key):
     """Record a captured photo's S3 key so /scans can list it later."""
-    scanned_at = datetime.now(timezone.utc)
+    scanned_at = datetime.now(EASTERN)
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -160,8 +162,6 @@ def get_latest_inventory():
     """
     conn = get_connection()
     try:
-        # RealDictCursor returns each row as a dict ({"name": ...}) instead of a
-        # positional tuple, so we can read columns by name below.
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
@@ -179,7 +179,7 @@ def get_latest_inventory():
     # Turn the stored timestamp back into the date/time strings the card displays.
     items = []
     for r in rows:
-        ts = r["scanned_at"]
+        ts = r["scanned_at"].astimezone(EASTERN)
         items.append({
             "name": r["name"],
             "amount": r["amount"],
@@ -230,7 +230,7 @@ def get_latest_shopping():
 
     items = []
     for r in rows:
-        ts = r["generated_at"]
+        ts = r["generated_at"].astimezone(EASTERN)
         items.append({
             "name": r["name"],
             "amount": r["amount"],

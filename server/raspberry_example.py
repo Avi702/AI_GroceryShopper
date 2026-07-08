@@ -3,7 +3,7 @@ import requests
 from picamera2 import Picamera2
 from sense_hat import SenseHat
 
-SERVER = "http://ip/8000"     # base URL only — no /scan
+SERVER = f"http://{YOUR_IP}/8000"   # base URL only — no /scan
 
 def capture_and_send():
     sense = SenseHat()
