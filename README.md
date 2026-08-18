@@ -1,3 +1,9 @@
+
+
+https://github.com/user-attachments/assets/c7cb8294-b9de-4fe4-ae41-dd0c8af78239
+
+
+
 # 🛒 AI Grocery Shopper
 
 A full-stack, hardware-connected grocery inventory system: a **Raspberry Pi camera** or **phone photo** of your fridge is turned into a structured inventory, cross-referenced against scan history to figure out what's running low, and turned into a **priced, web-grounded shopping list** — powered by a multi-agent Claude pipeline.
